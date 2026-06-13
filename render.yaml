@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: product-selection-tool
+    runtime: node
+    plan: free
+    buildCommand: ""
+    startCommand: node src/server/http-server.mjs
+    envVars:
+      - key: NODE_ENV
+        value: production

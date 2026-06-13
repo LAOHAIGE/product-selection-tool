@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>选品决策台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">选品决策台</div>
+      <nav>
+        <a class="active" href="#candidates">候选池</a>
+        <a href="#import">数据导入</a>
+        <a href="#ai-config">AI 配置</a>
+        <a href="#rules">规则配置</a>
+        <a href="#reports">报告中心</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1>Health & Household 候选品分析</h1>
+          <p>导入卖家精灵产品资料表，生成候选池、风险提示和下一步补数建议。</p>
+        </div>
+        <div class="actions">
+          <label class="button primary" for="fileInput">导入产品表</label>
+          <input id="fileInput" type="file" accept=".xlsx" hidden>
+          <a class="button" href="/api/export.csv">导出 CSV</a>
+          <a class="button" href="/api/report.md">导出报告</a>
+        </div>
+      </header>
+      <section id="summary" class="metric-grid"></section>
+      <section id="nextStepWorkspace" class="next-step-panel">
+        <div class="next-step-copy">
+          <div class="eyebrow">下一步工作区</div>
+          <h2>第 2 步：二轮复核与补数</h2>
+          <p id="nextStepMessage">导入产品表后，这里会生成下一轮动作。</p>
+          <p id="sifStatus" class="sif-status">关键词数据未导入。</p>
+        </div>
+        <div class="next-step-actions">
+          <button class="step-button primary" type="button" data-step-action="strong">进入强候选复核</button>
+          <button class="step-button" type="button" data-step-action="manual">处理人工复核</button>
+          <input id="sifFileInput" type="file" accept=".xlsx" hidden>
+          <input id="keywordFilesInput" type="file" accept=".xlsx" multiple hidden>
+          <input id="competitorFileInput" type="file" accept=".xlsx" hidden>
+          <button id="keywordBatchImport" class="step-button" type="button" data-run-required>导入关键词数据</button>
+          <button class="step-button" type="button" data-step-action="missing">查看缺失数据</button>
+          <a class="step-button" href="/api/report.md">导出二轮补数清单</a>
+        </div>
+      </section>
+      <section id="aiConfigPanel" class="ai-config-panel">
+        <div class="ai-config-copy">
+          <div class="eyebrow">AI 配置</div>
+          <h2>DeepSeek 分析规则</h2>
+          <p class="muted">这里的规则会用于之后每一次 ASIN 总结和竞品分析。</p>
+        </div>
+        <div class="ai-config-editor">
+          <label class="field-label" for="aiPromptInput">ASIN 总结规则</label>
+          <textarea id="aiPromptInput" rows="5" spellcheck="false"></textarea>
+          <label class="field-label" for="competitorPromptInput">竞品分析规则</label>
+          <textarea id="competitorPromptInput" rows="5" spellcheck="false"></textarea>
+          <div class="deepseek-key-row">
+            <label class="field-label" for="deepseekKeyInput">DeepSeek Key</label>
+            <input id="deepseekKeyInput" class="text-input" type="password" autocomplete="off" placeholder="填入 sk- 开头的 DeepSeek Key">
+            <button id="deepseekKeyTest" class="step-button" type="button">测试 Key</button>
+          </div>
+          <div class="ai-config-actions">
+            <div>
+              <span id="aiConfigStatus" class="muted">正在读取 AI 配置。</span>
+              <span id="deepseekKeyStatus" class="muted key-status"></span>
+            </div>
+            <button id="aiConfigSave" class="step-button primary" type="button">保存 AI 配置</button>
+          </div>
+        </div>
+      </section>
+      <section class="workspace">
+        <div class="panel candidate-panel">
+          <div class="panel-head">
+            <h2>候选池排名</h2>
+            <select id="statusFilter">
+              <option value="all">全部状态</option>
+              <option value="strong_candidate">强候选</option>
+              <option value="observation_candidate">观察候选</option>
+              <option value="manual_review">人工复核</option>
+              <option value="rejected">淘汰</option>
+              <option value="insufficient_data">数据不足</option>
+            </select>
+          </div>
+          <div class="candidate-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ASIN</th>
+                  <th>产品</th>
+                  <th>销量</th>
+                  <th>价格</th>
+                  <th>机会</th>
+                  <th>风险</th>
+                  <th>结论</th>
+                </tr>
+              </thead>
+              <tbody id="candidateTable"></tbody>
+            </table>
+          </div>
+        </div>
+        <aside class="analysis-shell">
+          <div class="analysis-tabs" role="tablist" aria-label="ASIN 分析视图">
+            <button class="analysis-tab active" type="button" data-analysis-tab="detail">ASIN 详情</button>
+            <button class="analysis-tab" type="button" data-analysis-tab="ai">AI 分析</button>
+            <button class="analysis-tab" type="button" data-analysis-tab="competitor">竞品分析</button>
+          </div>
+          <div class="analysis-panels">
+            <section id="detailPanel" class="analysis-panel detail-panel active" data-analysis-panel="detail">
+              <h2>ASIN 详情</h2>
+              <p class="muted">选择一条候选记录查看原因。</p>
+            </section>
+            <section id="aiPanel" class="analysis-panel ai-panel" data-analysis-panel="ai">
+              <h2>AI 分析</h2>
+              <p class="muted">选择 ASIN 后点击 AI 总结，这里会显示 DeepSeek 的结论和打法。</p>
+            </section>
+            <section id="competitorAiPanel" class="analysis-panel competitor-ai-panel" data-analysis-panel="competitor">
+              <h2>竞品分析</h2>
+              <p class="muted">选择 ASIN 后导入竞品数据，这里会显示竞品概览和 DeepSeek 分析。</p>
+            </section>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
