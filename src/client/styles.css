@@ -74,12 +74,17 @@ th { color: var(--muted); font-size: 12px; font-weight: 700; background: #fbfcfe
 tr { cursor: pointer; }
 tr:hover { background: #f8fbff; }
 tr.selected { background: #eef5ff; }
+tr.reviewed { background: #f4fbf7; }
+tr.reviewed.selected { background: #e7f7ef; }
 .score { font-weight: 800; color: var(--green); }
 .risk { color: var(--amber); font-weight: 700; }
 .status { font-weight: 700; white-space: nowrap; }
 .asin-cell { display: grid; gap: 6px; justify-items: start; min-width: 116px; }
 .asin-link { color: var(--blue); font-weight: 800; text-decoration: none; }
 .asin-link:hover { text-decoration: underline; }
+.reviewed-toggle { align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); cursor: pointer; display: inline-flex; font-size: 12px; font-weight: 750; gap: 5px; padding: 4px 7px; user-select: none; white-space: nowrap; }
+.reviewed-toggle:hover { border-color: rgba(15, 138, 95, 0.45); color: var(--green); }
+.reviewed-toggle input { accent-color: var(--green); margin: 0; }
 .row-action { border: 1px solid var(--line); background: #fff; border-radius: 7px; color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; font-weight: 750; padding: 5px 8px; white-space: nowrap; }
 .row-action:hover { border-color: var(--blue); color: var(--blue); }
 .row-action:disabled { background: #f3f6fa; color: #91a0b2; cursor: not-allowed; }

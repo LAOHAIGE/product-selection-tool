@@ -1,0 +1,77 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("client HTML includes AI config controls and a separate AI panel", async () => {
+  const html = await readFile("src/client/index.html", "utf8");
+
+  assert.match(html, /id="aiConfigPanel"/);
+  assert.match(html, /id="aiPromptInput"/);
+  assert.match(html, /id="competitorPromptInput"/);
+  assert.match(html, /id="deepseekKeyInput"/);
+  assert.match(html, /id="deepseekKeyTest"/);
+  assert.match(html, /id="deepseekKeyStatus"/);
+  assert.match(html, /id="aiConfigSave"/);
+  assert.match(html, /id="keywordFilesInput"/);
+  assert.match(html, /id="keywordBatchImport"/);
+  assert.match(html, /导入关键词数据/);
+  assert.match(html, /id="competitorFileInput"/);
+  assert.match(html, /class="candidate-table-wrap"/);
+  assert.match(html, /class="analysis-shell"/);
+  assert.match(html, /class="analysis-tabs"/);
+  assert.match(html, /data-analysis-tab="detail"/);
+  assert.match(html, /data-analysis-tab="ai"/);
+  assert.match(html, /data-analysis-tab="competitor"/);
+  assert.match(html, /id="aiPanel"/);
+  assert.match(html, /id="competitorAiPanel"/);
+});
+
+test("client JS loads AI config and renders AI output outside the detail panel", async () => {
+  const js = await readFile("src/client/app.js", "utf8");
+
+  assert.match(js, /function renderAiPanel/);
+  assert.match(js, /function renderCompetitorAiPanel/);
+  assert.match(js, /async function updateReviewed/);
+  assert.match(js, /data-reviewed-asin/);
+  assert.match(js, /\/api\/item-reviewed/);
+  assert.match(js, /reviewed-toggle/);
+  assert.match(js, /SESSION_STORAGE_KEY/);
+  assert.match(js, /AI_CONFIG_STORAGE_KEY/);
+  assert.match(js, /function getOrCreateSessionId/);
+  assert.match(js, /function sessionHeaders/);
+  assert.match(js, /function deepseekRequestHeaders/);
+  assert.match(js, /async function downloadFromApi/);
+  assert.match(js, /localStorage/);
+  assert.match(js, /x-selection-session-id/);
+  assert.match(js, /x-deepseek-api-key/);
+  assert.match(js, /x-ai-prompt-b64/);
+  assert.match(js, /x-competitor-prompt-b64/);
+  assert.match(js, /\/api\/export\.csv/);
+  assert.match(js, /\/api\/report\.md/);
+  assert.match(js, /activeAnalysisTab:\s*"detail"/);
+  assert.match(js, /function setAnalysisTab/);
+  assert.match(js, /function syncAnalysisTabs/);
+  assert.match(js, /async function loadAiConfig/);
+  assert.match(js, /async function saveAiConfig/);
+  assert.match(js, /async function importKeywordFile/);
+  assert.match(js, /async function importKeywordFiles/);
+  assert.match(js, /\/api\/import-keywords/);
+  assert.match(js, /async function importCompetitorFile/);
+  assert.match(js, /\/api\/import-competitors/);
+  assert.match(js, /\/api\/competitor-ai-analysis/);
+  assert.match(js, /data-competitor-asin/);
+  assert.match(js, /data-competitor-ai-asin/);
+  assert.match(js, /导入竞品数据/);
+  assert.match(js, /重新分析竞品/);
+  assert.match(js, /async function testDeepSeekKey/);
+  assert.match(js, /fetch\("\/api\/ai-config"/);
+  assert.match(js, /fetch\("\/api\/deepseek-test"/);
+  assert.doesNotMatch(js, /method:\s*"PUT"[\s\S]{0,120}\/api\/ai-config/);
+  assert.match(js, /document\.querySelector\("#aiPanel"\)/);
+  assert.match(js, /document\.querySelector\("#competitorAiPanel"\)/);
+  assert.match(js, /setAnalysisTab\("detail"\)/);
+  assert.match(js, /setAnalysisTab\("ai"\)/);
+  assert.match(js, /setAnalysisTab\("competitor"\)/);
+  assert.match(js, /document\.querySelector\("\.analysis-tabs"\)/);
+  assert.doesNotMatch(js.match(/function renderAiPanel[\s\S]*?function renderDetail/)?.[0] || "", /renderCompetitorAiAnalysis/);
+});

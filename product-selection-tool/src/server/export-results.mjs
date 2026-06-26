@@ -5,8 +5,10 @@ function csvCell(value) {
 }
 
 export function toCsv(items) {
-  const headers = ["ASIN", "Title", "Brand", "Category", "Monthly Sales", "Price", "Opportunity Score", "Risk Score", "Product Standard Analysis", "Keyword Score", "SIF Keyword Count", "SIF Total Search Volume", "Top SIF Keywords", "SIF Standard Analysis", "Status", "Pass Reasons", "Rejection Reasons", "Retention Reasons", "Missing Data"];
+  const headers = ["Reviewed", "Reviewed At", "ASIN", "Title", "Brand", "Category", "Monthly Sales", "Price", "Opportunity Score", "Risk Score", "Product Standard Analysis", "Keyword Score", "SIF Keyword Count", "SIF Total Search Volume", "Top SIF Keywords", "SIF Standard Analysis", "Status", "Pass Reasons", "Rejection Reasons", "Retention Reasons", "Missing Data"];
   const rows = items.map((item) => [
+    item.reviewed ? "Yes" : "No",
+    item.reviewedAt || "",
     item.asin,
     item.title,
     item.brand,
@@ -32,6 +34,7 @@ export function toCsv(items) {
 
 export function toMarkdownReport(summary, items) {
   const sifImportedCount = items.filter((item) => item.sif).length;
+  const reviewedCount = items.filter((item) => item.reviewed).length;
   const topItems = [...items]
     .sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0))
     .slice(0, 20);
@@ -44,15 +47,16 @@ export function toMarkdownReport(summary, items) {
     `Manual review: ${summary.manualReview}`,
     `Rejected: ${summary.rejected}`,
     `Insufficient data: ${summary.insufficientData}`,
+    `Reviewed ASINs: ${reviewedCount}`,
     "",
     "## Top Candidates",
     "",
-    "| ASIN | Status | Opportunity | Risk | Main Reason |",
-    "| --- | --- | ---: | ---: | --- |"
+    "| Reviewed | ASIN | Status | Opportunity | Risk | Main Reason |",
+    "| --- | --- | --- | ---: | ---: | --- |"
   ];
   for (const item of topItems) {
     const reason = item.passReasons[0] || item.retentionReasons[0] || item.rejectionReasons[0] || "No reason recorded";
-    lines.push(`| ${item.asin} | ${item.status} | ${item.opportunityScore ?? ""} | ${item.riskScore ?? ""} | ${reason.replace(/\|/g, "/")} |`);
+    lines.push(`| ${item.reviewed ? "Yes" : "No"} | ${item.asin} | ${item.status} | ${item.opportunityScore ?? ""} | ${item.riskScore ?? ""} | ${reason.replace(/\|/g, "/")} |`);
   }
   lines.push("", "## Missing Data Prompts", "");
   if (sifImportedCount > 0) {

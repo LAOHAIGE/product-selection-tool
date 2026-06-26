@@ -174,10 +174,14 @@ function setAnalysisTab(tab) {
 function renderCandidates() {
   const aiReady = Boolean(state.deepseek?.configured || state.aiConfig?.deepseekKeyConfigured);
   const rows = filteredItems().map((item) => `
-    <tr data-asin="${item.asin}" class="${state.selected?.asin === item.asin ? "selected" : ""}">
+    <tr data-asin="${item.asin}" class="${[state.selected?.asin === item.asin ? "selected" : "", item.reviewed ? "reviewed" : ""].filter(Boolean).join(" ")}">
       <td>
         <div class="asin-cell">
           <a class="asin-link" href="${amazonProductUrl(item.asin)}" target="_blank" rel="noopener noreferrer">${item.asin}</a>
+          <label class="reviewed-toggle" title="标记这个 ASIN 已经看过">
+            <input type="checkbox" data-reviewed-asin="${item.asin}" ${item.reviewed ? "checked" : ""}>
+            <span>已看</span>
+          </label>
           <button class="row-action ${item.sif ? "done" : ""}" type="button" data-sif-asin="${item.asin}">${item.sif ? "更新关键词数据" : "导入关键词数据"}</button>
           <button class="row-action ${item.competitors ? "done" : ""}" type="button" data-competitor-asin="${item.asin}">${item.competitors ? "更新竞品数据" : "导入竞品数据"}</button>
           <button class="row-action ${item.aiSummary ? "done" : ""}" type="button" data-ai-asin="${item.asin}" ${aiReady ? "" : "disabled"} title="${aiReady ? "用 DeepSeek 分析该 ASIN" : "DeepSeek API Key 未配置"}">${item.aiSummary ? "更新总结" : "AI 总结"}</button>
@@ -509,6 +513,20 @@ async function summarizeAsin(asin) {
   hydrateRun(await response.json(), asin);
 }
 
+async function updateReviewed(asin, reviewed) {
+  if (!state.run) throw new Error("请先导入产品表。");
+  const response = await fetch(`/api/item-reviewed?asin=${encodeURIComponent(asin)}`, {
+    method: "POST",
+    headers: { ...sessionHeaders(), "content-type": "application/json" },
+    body: JSON.stringify({ reviewed })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || response.statusText);
+  }
+  hydrateRun(await response.json(), state.selected?.asin || asin, { resetFilters: false });
+}
+
 function renderDeepSeekKeyStatus(message = "") {
   const status = document.querySelector("#deepseekKeyStatus");
   if (!status) return;
@@ -730,6 +748,7 @@ document.querySelector(".analysis-tabs").addEventListener("click", (event) => {
 
 document.querySelector("#candidateTable").addEventListener("click", (event) => {
   if (event.target.closest(".asin-link")) return;
+  if (event.target.closest(".reviewed-toggle")) return;
   const sifButton = event.target.closest("[data-sif-asin]");
   if (sifButton) {
     state.pendingSifAsin = sifButton.dataset.sifAsin;
@@ -775,6 +794,32 @@ document.querySelector("#candidateTable").addEventListener("click", (event) => {
   renderDetail(state.selected);
   renderAiPanel(state.selected);
   renderCompetitorAiPanel(state.selected);
+});
+
+document.querySelector("#candidateTable").addEventListener("change", (event) => {
+  const reviewedInput = event.target.closest("[data-reviewed-asin]");
+  if (!reviewedInput) return;
+  const asin = reviewedInput.dataset.reviewedAsin;
+  const reviewed = reviewedInput.checked;
+  const item = state.run?.items?.find((entry) => entry.asin === asin);
+  if (!item) return;
+  const previousReviewed = Boolean(item.reviewed);
+  const previousReviewedAt = item.reviewedAt ?? null;
+  item.reviewed = reviewed;
+  item.reviewedAt = reviewed ? new Date().toISOString() : null;
+  renderCandidates();
+  if (state.selected?.asin === asin) {
+    renderDetail(item);
+    renderAiPanel(item);
+    renderCompetitorAiPanel(item);
+  }
+  updateReviewed(asin, reviewed).catch((error) => {
+    item.reviewed = previousReviewed;
+    item.reviewedAt = previousReviewedAt;
+    renderCandidates();
+    if (state.selected?.asin === asin) renderDetail(item);
+    document.querySelector("#detailPanel").innerHTML = `<h2>标记失败</h2><p class="muted">${error.message}</p>`;
+  });
 });
 
 document.querySelector("#competitorAiPanel").addEventListener("click", (event) => {

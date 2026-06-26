@@ -284,6 +284,38 @@ export function createAppServer(options = {}) {
     sendJson(response, 200, latestRun);
   }
 
+  async function updateItemReviewed(request, url, response) {
+    const currentRun = await getCurrentRun(request);
+    if (!currentRun) {
+      sendJson(response, 400, { error: "Please import a product workbook before marking an ASIN as reviewed." });
+      return;
+    }
+    const targetAsin = normalizeAsin(url.searchParams.get("asin") || "");
+    if (!targetAsin) {
+      sendJson(response, 400, { error: "ASIN is required." });
+      return;
+    }
+    const body = await readBody(request);
+    const payload = body.length ? JSON.parse(body.toString("utf8")) : {};
+    const reviewed = Boolean(payload.reviewed);
+    let found = false;
+    const items = (currentRun.items || []).map((item) => {
+      if (normalizeAsin(item.asin) !== targetAsin) return item;
+      found = true;
+      return {
+        ...item,
+        reviewed,
+        reviewedAt: reviewed ? new Date().toISOString() : null
+      };
+    });
+    if (!found) {
+      sendJson(response, 404, { error: `ASIN not found: ${targetAsin}` });
+      return;
+    }
+    const latestRun = await saveCurrentRun(request, { ...currentRun, items });
+    sendJson(response, 200, latestRun);
+  }
+
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://localhost");
@@ -362,6 +394,11 @@ export function createAppServer(options = {}) {
 
       if (request.method === "POST" && pathname === "/api/competitor-ai-analysis") {
         await rerunCompetitorAi(request, url, response);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/item-reviewed") {
+        await updateItemReviewed(request, url, response);
         return;
       }
 
