@@ -323,6 +323,51 @@ test("POST /api/item-reviewed marks one ASIN as reviewed in the current browser 
   });
 });
 
+test("POST /api/restore-run restores a browser workspace and keeps sessions isolated", async () => {
+  const restoredRun = {
+    id: "browser-workspace",
+    summary: { total: 1 },
+    items: [{ asin: "BRESTORE01", reviewed: true, reviewedAt: "2026-06-30T08:00:00.000Z" }]
+  };
+
+  await withServer(async (baseUrl) => {
+    const restoreResponse = await fetch(`${baseUrl}/api/restore-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-selection-session-id": "restore-browser" },
+      body: JSON.stringify({ run: restoredRun })
+    });
+    const restored = await restoreResponse.json();
+
+    assert.equal(restoreResponse.status, 200);
+    assert.equal(restored.items[0].asin, "BRESTORE01");
+    assert.equal(restored.items[0].reviewed, true);
+
+    const sameSession = await fetch(`${baseUrl}/api/latest-run`, {
+      headers: { "x-selection-session-id": "restore-browser" }
+    });
+    assert.equal((await sameSession.json()).items[0].asin, "BRESTORE01");
+
+    const otherSession = await fetch(`${baseUrl}/api/latest-run`, {
+      headers: { "x-selection-session-id": "another-browser" }
+    });
+    assert.equal(otherSession.status, 204);
+  });
+});
+
+test("POST /api/restore-run rejects a damaged workspace", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/restore-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-selection-session-id": "invalid-restore" },
+      body: JSON.stringify({ run: { items: "not-an-array" } })
+    });
+    const json = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(json.error, /items array/);
+  });
+});
+
 test("isMainModule recognizes Windows file URLs when launched from PowerShell", () => {
   assert.equal(
     isMainModule("file:///F:/codex1/codex6%E6%9C%881%E5%88%86%E6%9E%90%E8%9B%8B%E7%99%BD%E7%B2%89/src/server/http-server.mjs", "F:\\codex1\\codex6月1分析蛋白粉\\src\\server\\http-server.mjs"),

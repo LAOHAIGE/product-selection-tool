@@ -24,6 +24,7 @@ test("client HTML includes AI config controls and a separate AI panel", async ()
   assert.match(html, /data-analysis-tab="competitor"/);
   assert.match(html, /id="aiPanel"/);
   assert.match(html, /id="competitorAiPanel"/);
+  assert.match(html, /id="workspaceSaveStatus"/);
 });
 
 test("client JS loads AI config and renders AI output outside the detail panel", async () => {
@@ -42,6 +43,11 @@ test("client JS loads AI config and renders AI output outside the detail panel",
   assert.match(js, /function deepseekRequestHeaders/);
   assert.match(js, /async function downloadFromApi/);
   assert.match(js, /localStorage/);
+  assert.match(js, /workspace-storage\.js/);
+  assert.match(js, /persistWorkspace/);
+  assert.match(js, /restoreWorkspaceToServer/);
+  assert.match(js, /fetchWithWorkspaceRecovery/);
+  assert.match(js, /\/api\/restore-run/);
   assert.match(js, /x-selection-session-id/);
   assert.match(js, /x-deepseek-api-key/);
   assert.match(js, /x-ai-prompt-b64/);

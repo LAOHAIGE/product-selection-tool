@@ -50,6 +50,13 @@ function normalizeAsin(value) {
   return String(value || "").trim().toUpperCase();
 }
 
+function validateRestoredRun(run) {
+  if (!run || typeof run !== "object" || !Array.isArray(run.items)) {
+    return "Workspace run must contain an items array.";
+  }
+  return "";
+}
+
 function requestHeader(request, name) {
   return String(request.headers[name] || "").trim();
 }
@@ -374,6 +381,18 @@ export function createAppServer(options = {}) {
         const analysis = analyzeProducts(normalized.products, DEFAULT_RULES);
         const latestRun = await saveCurrentRun(request, { ...analysis, importInfo: { sheetName: sheet.name, missingRequiredFields: normalized.missingRequiredFields } });
         sendJson(response, 200, latestRun);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/restore-run") {
+        const body = await readBody(request);
+        const payload = body.length ? JSON.parse(body.toString("utf8")) : {};
+        const error = validateRestoredRun(payload.run);
+        if (error) {
+          sendJson(response, 400, { error });
+          return;
+        }
+        sendJson(response, 200, await saveCurrentRun(request, payload.run));
         return;
       }
 

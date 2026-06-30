@@ -37,6 +37,8 @@ h2 { font-size: 16px; }
 .eyebrow { color: var(--blue); font-size: 12px; font-weight: 800; margin-bottom: 6px; }
 .next-step-copy p { color: var(--muted); margin: 8px 0 0; line-height: 1.5; }
 .sif-status { font-size: 13px; }
+.workspace-save-status { color: var(--green) !important; font-size: 13px; }
+.workspace-save-status.error { color: var(--red) !important; }
 .next-step-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 .step-button { border: 1px solid var(--line); background: #fff; border-radius: 7px; padding: 9px 12px; color: var(--ink); font-weight: 700; text-decoration: none; cursor: pointer; font: inherit; white-space: nowrap; }
 .step-button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }

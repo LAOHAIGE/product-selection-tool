@@ -1,3 +1,8 @@
+import { createWorkspaceStorage } from "./workspace-storage.js";
+import { fetchWithWorkspaceRecovery as recoverWorkspaceRequest } from "./workspace-recovery.js";
+
+const workspaceStorage = createWorkspaceStorage();
+
 const state = {
   sessionId: getOrCreateSessionId(),
   run: null,
@@ -27,6 +32,46 @@ function getOrCreateSessionId() {
 
 function sessionHeaders() {
   return { "x-selection-session-id": state.sessionId };
+}
+
+function renderWorkspaceStatus(message, isError = false) {
+  const status = document.querySelector("#workspaceSaveStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("error", isError);
+}
+
+async function persistWorkspace(run = state.run) {
+  if (!run) return null;
+  try {
+    const record = await workspaceStorage.save(run);
+    renderWorkspaceStatus(`工作区已自动保存：${new Date(record.savedAt).toLocaleString()}`);
+    return record;
+  } catch (error) {
+    renderWorkspaceStatus(`工作区保存失败：${error.message}`, true);
+    throw error;
+  }
+}
+
+async function restoreWorkspaceToServer(run = state.run) {
+  if (!run) return null;
+  const response = await fetch("/api/restore-run", {
+    method: "POST",
+    headers: { ...sessionHeaders(), "content-type": "application/json" },
+    body: JSON.stringify({ run })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || response.statusText);
+  }
+  return response.json();
+}
+
+async function fetchWithWorkspaceRecovery(input, init = {}) {
+  return recoverWorkspaceRequest(fetch, input, init, {
+    hasWorkspace: () => Boolean(state.run),
+    restoreWorkspace: () => restoreWorkspaceToServer()
+  });
 }
 
 function maskDeepSeekKey(key) {
@@ -433,7 +478,7 @@ async function importKeywordFile(file, asin = "", options = {}) {
   const params = new URLSearchParams();
   if (asin) params.set("asin", asin);
   if (file.name) params.set("filename", file.name);
-  const response = await fetch(`/api/import-keywords?${params.toString()}`, {
+  const response = await fetchWithWorkspaceRecovery(`/api/import-keywords?${params.toString()}`, {
     method: "POST",
     headers: { ...sessionHeaders(), "content-type": file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
     body: await file.arrayBuffer()
@@ -479,7 +524,7 @@ async function importCompetitorFile(file, asin) {
   if (!state.run) throw new Error("请先导入产品表。");
   if (!asin) throw new Error("请先从某个 ASIN 行点击导入竞品数据。");
   const params = new URLSearchParams({ asin });
-  const response = await fetch(`/api/import-competitors?${params.toString()}`, {
+  const response = await fetchWithWorkspaceRecovery(`/api/import-competitors?${params.toString()}`, {
     method: "POST",
     headers: { ...deepseekRequestHeaders("competitor"), "content-type": file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
     body: await file.arrayBuffer()
@@ -496,7 +541,7 @@ async function importCompetitorFile(file, asin) {
 async function rerunCompetitorAi(asin) {
   if (!state.run) throw new Error("请先导入产品表。");
   if (!asin) throw new Error("请先选择一个 ASIN。");
-  const response = await fetch(`/api/competitor-ai-analysis?asin=${encodeURIComponent(asin)}`, { method: "POST", headers: deepseekRequestHeaders("competitor") });
+  const response = await fetchWithWorkspaceRecovery(`/api/competitor-ai-analysis?asin=${encodeURIComponent(asin)}`, { method: "POST", headers: deepseekRequestHeaders("competitor") });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || response.statusText);
@@ -505,7 +550,7 @@ async function rerunCompetitorAi(asin) {
 }
 
 async function summarizeAsin(asin) {
-  const response = await fetch(`/api/ai-summary?asin=${encodeURIComponent(asin)}`, { method: "POST", headers: deepseekRequestHeaders("asin") });
+  const response = await fetchWithWorkspaceRecovery(`/api/ai-summary?asin=${encodeURIComponent(asin)}`, { method: "POST", headers: deepseekRequestHeaders("asin") });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || response.statusText);
@@ -515,7 +560,7 @@ async function summarizeAsin(asin) {
 
 async function updateReviewed(asin, reviewed) {
   if (!state.run) throw new Error("请先导入产品表。");
-  const response = await fetch(`/api/item-reviewed?asin=${encodeURIComponent(asin)}`, {
+  const response = await fetchWithWorkspaceRecovery(`/api/item-reviewed?asin=${encodeURIComponent(asin)}`, {
     method: "POST",
     headers: { ...sessionHeaders(), "content-type": "application/json" },
     body: JSON.stringify({ reviewed })
@@ -651,6 +696,7 @@ function hydrateRun(run, selectedAsin = null, options = {}) {
   renderDetail(state.selected);
   renderAiPanel(state.selected);
   renderCompetitorAiPanel(state.selected);
+  if (options.persist !== false) persistWorkspace(run).catch(() => {});
 }
 
 async function loadLatestRun() {
@@ -660,7 +706,25 @@ async function loadLatestRun() {
   hydrateRun(await response.json());
 }
 
+async function initializeWorkspace() {
+  try {
+    const localWorkspace = await workspaceStorage.load();
+    if (localWorkspace) {
+      hydrateRun(localWorkspace.run, null, { persist: false });
+      renderWorkspaceStatus("已从当前浏览器恢复工作区，正在同步服务器。");
+      await restoreWorkspaceToServer(localWorkspace.run);
+      renderWorkspaceStatus(`工作区已恢复，上次保存：${new Date(localWorkspace.savedAt).toLocaleString()}`);
+      return;
+    }
+  } catch (error) {
+    renderWorkspaceStatus(`本地工作区恢复失败：${error.message}`, true);
+  }
+  await loadLatestRun();
+  if (!state.run) renderWorkspaceStatus("还没有已保存的工作区。");
+}
+
 async function downloadFromApi(path, filename) {
+  if (state.run) await restoreWorkspaceToServer();
   const response = await fetch(path, { headers: sessionHeaders() });
   if (!response.ok) throw new Error(response.statusText);
   const blob = await response.blob();
@@ -803,10 +867,9 @@ document.querySelector("#candidateTable").addEventListener("change", (event) => 
   const reviewed = reviewedInput.checked;
   const item = state.run?.items?.find((entry) => entry.asin === asin);
   if (!item) return;
-  const previousReviewed = Boolean(item.reviewed);
-  const previousReviewedAt = item.reviewedAt ?? null;
   item.reviewed = reviewed;
   item.reviewedAt = reviewed ? new Date().toISOString() : null;
+  persistWorkspace().catch(() => {});
   renderCandidates();
   if (state.selected?.asin === asin) {
     renderDetail(item);
@@ -814,11 +877,7 @@ document.querySelector("#candidateTable").addEventListener("change", (event) => 
     renderCompetitorAiPanel(item);
   }
   updateReviewed(asin, reviewed).catch((error) => {
-    item.reviewed = previousReviewed;
-    item.reviewedAt = previousReviewedAt;
-    renderCandidates();
-    if (state.selected?.asin === asin) renderDetail(item);
-    document.querySelector("#detailPanel").innerHTML = `<h2>标记失败</h2><p class="muted">${error.message}</p>`;
+    renderWorkspaceStatus(`“已看”已保存在浏览器，服务器暂未同步：${error.message}`, true);
   });
 });
 
@@ -870,7 +929,9 @@ syncAnalysisTabs();
 renderCandidates();
 renderAiPanel();
 renderCompetitorAiPanel();
-loadLatestRun().catch(() => {});
+initializeWorkspace().catch((error) => {
+  renderWorkspaceStatus(`工作区初始化失败：${error.message}`, true);
+});
 loadAiConfig().catch((error) => {
   document.querySelector("#aiConfigStatus").textContent = `读取失败：${error.message}`;
 });
