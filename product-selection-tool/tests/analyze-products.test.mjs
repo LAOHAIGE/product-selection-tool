@@ -69,3 +69,22 @@ test("analyzeProducts marks missing critical values as insufficient data", () =>
   assert.equal(result.items[0].status, "insufficient_data");
   assert.ok(result.items[0].missingData.some((item) => item.includes("monthlySales")));
 });
+
+test("analyzeProducts applies a custom FBA-to-price ratio", () => {
+  const rules = { ...DEFAULT_RULES, maxFbaToPriceRatio: 0.1 };
+  const result = analyzeProducts([{ ...baseProduct, asin: "B000TEST07", price: 30, fbaFee: 4 }], rules);
+
+  assert.equal(result.items[0].status, "rejected");
+  assert.ok(result.items[0].rejectionReasons.some((reason) => reason.includes("FBA-to-price ratio")));
+});
+
+test("selection detail conclusions show the active custom thresholds", () => {
+  const rules = { ...DEFAULT_RULES, minMonthlySales: 5000, minPrice: 40, maxFbaFee: 5, maxListingAgeDays: 365 };
+  const result = analyzeProducts([{ ...baseProduct, asin: "B000TEST08", price: 35 }], rules);
+  const points = result.items[0].selectionAnalysis.standardPoints;
+
+  assert.match(points[0].conclusion, /5000/);
+  assert.match(points[2].conclusion, /40/);
+  assert.match(points[3].conclusion, /5/);
+  assert.match(points[4].conclusion, /365/);
+});

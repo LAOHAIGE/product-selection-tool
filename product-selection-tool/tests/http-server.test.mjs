@@ -92,7 +92,101 @@ test("GET /api/rules returns default rules", async () => {
     const json = await response.json();
 
     assert.equal(response.status, 200);
-    assert.equal(json.minMonthlySales, 3000);
+    assert.equal(json.defaults.minMonthlySales, 3000);
+    assert.equal(json.defaults.minPrice, 25);
+    assert.ok(json.fields.some((field) => field.key === "maxListingAgeDays"));
+  });
+});
+
+test("POST /api/analyze uses custom selection rules from the browser", async () => {
+  const workbook = makeXlsxFixture([
+    ["ASIN", "Product Title", "Brand", "Subcategory", "Monthly Sales", "Price", "Review Count", "Rating", "FBA Fee", "Gross Margin", "Listing Age Days", "Seller Count"],
+    ["BCUSTOM001", "Custom Rule Product", "Rule Brand", "Supplements", 8000, 29.99, 120, 4.5, 4, 0.65, 100, 1]
+  ]);
+  const customRules = Buffer.from(JSON.stringify({ minPrice: 40 }), "utf8").toString("base64");
+
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/analyze`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "x-selection-rules-b64": customRules
+      },
+      body: workbook
+    });
+    const json = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(json.selectionRules.minPrice, 40);
+    assert.equal(json.items[0].status, "rejected");
+    assert.ok(json.items[0].rejectionReasons.some((reason) => reason.includes("40")));
+  });
+});
+
+test("POST /api/reanalyze recalculates candidates and preserves enrichment", async () => {
+  const run = {
+    summary: { total: 1 },
+    items: [{
+      asin: "BREANALYZE",
+      title: "Reanalysis Product",
+      brand: "Rule Brand",
+      smallCategory: "Supplements",
+      monthlySales: 8000,
+      salesGrowthRate: 0.2,
+      price: 29.99,
+      reviewCount: 120,
+      rating: 4.5,
+      fbaFee: 4,
+      grossMargin: 0.65,
+      listingAgeDays: 100,
+      sellerCount: 1,
+      reviewed: true,
+      reviewedAt: "2026-07-01T08:00:00.000Z",
+      sif: { summary: { keywordCount: 20 } },
+      competitors: { records: [{ title: "Competitor" }] },
+      aiSummary: { recommendation: "可做" }
+    }]
+  };
+  const headers = { "content-type": "application/json", "x-selection-session-id": "reanalyze-browser" };
+
+  await withServer(async (baseUrl) => {
+    await fetch(`${baseUrl}/api/restore-run`, { method: "POST", headers, body: JSON.stringify({ run }) });
+    const response = await fetch(`${baseUrl}/api/reanalyze`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ rules: { minPrice: 50 } })
+    });
+    const json = await response.json();
+    const item = json.items[0];
+
+    assert.equal(response.status, 200);
+    assert.equal(json.selectionRules.minPrice, 50);
+    assert.equal(item.status, "rejected");
+    assert.equal(item.reviewed, true);
+    assert.equal(item.sif.summary.keywordCount, 20);
+    assert.equal(item.competitors.records[0].title, "Competitor");
+    assert.equal(item.aiSummary.recommendation, "可做");
+  });
+});
+
+test("POST /api/reanalyze rejects invalid selection rules without replacing the run", async () => {
+  const headers = { "content-type": "application/json", "x-selection-session-id": "invalid-rules-browser" };
+  const run = { summary: { total: 1 }, items: [{ asin: "BINVALID01", price: 30 }] };
+
+  await withServer(async (baseUrl) => {
+    await fetch(`${baseUrl}/api/restore-run`, { method: "POST", headers, body: JSON.stringify({ run }) });
+    const response = await fetch(`${baseUrl}/api/reanalyze`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ rules: { minRating: 9 } })
+    });
+    const json = await response.json();
+    const latest = await (await fetch(`${baseUrl}/api/latest-run`, { headers })).json();
+
+    assert.equal(response.status, 400);
+    assert.equal(json.errors[0].key, "minRating");
+    assert.equal(latest.items[0].asin, "BINVALID01");
+    assert.equal(latest.selectionRules, undefined);
   });
 });
 

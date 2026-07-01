@@ -12,7 +12,7 @@ import { mergeCompetitorsIntoRun, normalizeCompetitors } from "./competitor-impo
 import { mergeSifIntoRun, normalizeSifKeywords } from "./sif-import.mjs";
 import { createStorage } from "./storage.mjs";
 import { readWorkbook } from "./xlsx/workbook-reader.mjs";
-import { DEFAULT_RULES } from "../shared/default-rules.mjs";
+import { DEFAULT_RULES, RULE_FIELDS, parseSelectionRules } from "../shared/default-rules.mjs";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -25,6 +25,7 @@ const SESSION_HEADER = "x-selection-session-id";
 const DEEPSEEK_KEY_HEADER = "x-deepseek-api-key";
 const AI_PROMPT_HEADER = "x-ai-prompt-b64";
 const COMPETITOR_PROMPT_HEADER = "x-competitor-prompt-b64";
+const SELECTION_RULES_HEADER = "x-selection-rules-b64";
 
 function openBrowser(url) {
   if (typeof process === "undefined") return;
@@ -77,6 +78,16 @@ function decodeBase64Header(request, name) {
     return Buffer.from(value, "base64").toString("utf8").trim();
   } catch {
     return "";
+  }
+}
+
+function selectionRulesFromRequest(request) {
+  const encodedRules = decodeBase64Header(request, SELECTION_RULES_HEADER);
+  if (!encodedRules) return parseSelectionRules();
+  try {
+    return parseSelectionRules(JSON.parse(encodedRules));
+  } catch {
+    return { rules: DEFAULT_RULES, errors: [{ key: "selectionRules", message: "筛选规则不是有效的 JSON。" }] };
   }
 }
 
@@ -329,7 +340,7 @@ export function createAppServer(options = {}) {
       const pathname = url.pathname;
 
       if (request.method === "GET" && pathname === "/api/rules") {
-        sendJson(response, 200, DEFAULT_RULES);
+        sendJson(response, 200, { defaults: DEFAULT_RULES, fields: RULE_FIELDS });
         return;
       }
 
@@ -374,12 +385,36 @@ export function createAppServer(options = {}) {
       }
 
       if (request.method === "POST" && pathname === "/api/analyze") {
+        const parsedRules = selectionRulesFromRequest(request);
+        if (parsedRules.errors.length) {
+          sendJson(response, 400, { error: "筛选规则校验失败。", errors: parsedRules.errors });
+          return;
+        }
         const body = await readBody(request);
         const workbook = readWorkbook(body);
         const sheet = workbook.sheets[0];
         const normalized = normalizeProducts(sheet);
-        const analysis = analyzeProducts(normalized.products, DEFAULT_RULES);
-        const latestRun = await saveCurrentRun(request, { ...analysis, importInfo: { sheetName: sheet.name, missingRequiredFields: normalized.missingRequiredFields } });
+        const analysis = analyzeProducts(normalized.products, parsedRules.rules);
+        const latestRun = await saveCurrentRun(request, { ...analysis, selectionRules: parsedRules.rules, importInfo: { sheetName: sheet.name, missingRequiredFields: normalized.missingRequiredFields } });
+        sendJson(response, 200, latestRun);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/reanalyze") {
+        const currentRun = await getCurrentRun(request);
+        if (!currentRun) {
+          sendJson(response, 400, { error: "Please import a product workbook before reanalyzing selection rules." });
+          return;
+        }
+        const body = await readBody(request);
+        const payload = body.length ? JSON.parse(body.toString("utf8")) : {};
+        const parsedRules = parseSelectionRules(payload.rules);
+        if (parsedRules.errors.length) {
+          sendJson(response, 400, { error: "筛选规则校验失败。", errors: parsedRules.errors });
+          return;
+        }
+        const analysis = analyzeProducts(currentRun.items || [], parsedRules.rules);
+        const latestRun = await saveCurrentRun(request, { ...currentRun, ...analysis, selectionRules: parsedRules.rules });
         sendJson(response, 200, latestRun);
         return;
       }

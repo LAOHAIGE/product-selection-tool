@@ -54,6 +54,8 @@ function analyzeOne(product, rules) {
     const ratio = product.fbaFee / product.price;
     if (product.fbaFee <= rules.maxFbaFee) passReasons.push(`FBA fee is within target: $${product.fbaFee}`);
     else rejectionReasons.push(`FBA fee above threshold: $${product.fbaFee} > $${rules.maxFbaFee}`);
+    if (ratio <= rules.maxFbaToPriceRatio) passReasons.push(`FBA-to-price ratio is within target: ${(ratio * 100).toFixed(1)}%`);
+    else rejectionReasons.push(`FBA-to-price ratio above threshold: ${(ratio * 100).toFixed(1)}% > ${(rules.maxFbaToPriceRatio * 100).toFixed(1)}%`);
   }
 
   if (product.grossMargin >= rules.minGrossMargin) passReasons.push(`Gross margin meets floor: ${(product.grossMargin * 100).toFixed(1)}%`);
@@ -101,11 +103,11 @@ function analyzeOne(product, rules) {
     ...scores,
     selectionAnalysis: {
       standardPoints: [
-        standardPoint(1, "ASIN月销量", product.monthlySales ?? "", hasMonthlySales && product.monthlySales >= rules.minMonthlySales, hasMonthlySales && product.monthlySales >= rules.minMonthlySales ? "月销量超过3000，有继续分析必要" : "月销量低于3000，需求不足"),
+        standardPoint(1, "ASIN月销量", product.monthlySales ?? "", hasMonthlySales && product.monthlySales >= rules.minMonthlySales, hasMonthlySales && product.monthlySales >= rules.minMonthlySales ? `月销量超过${rules.minMonthlySales}，有继续分析必要` : `月销量低于${rules.minMonthlySales}，需求不足`),
         standardPoint(2, "销量趋势", hasSalesGrowthRate ? `${(product.salesGrowthRate * 100).toFixed(1)}%` : "", hasSalesGrowthRate && product.salesGrowthRate > rules.minSalesGrowthRate, hasSalesGrowthRate && product.salesGrowthRate > rules.minSalesGrowthRate ? "销量正增长，进入方向顺势" : "销量非正增长，进入可能逆势"),
-        standardPoint(3, "ASIN价格", hasPrice ? `$${product.price}` : "", hasPrice && product.price >= rules.minPrice, hasPrice && product.price >= rules.minPrice ? "价格高于25，存在利润空间" : "价格低于25，利润空间偏弱"),
-        standardPoint(4, "ASIN物流成本", hasFbaFee ? `$${product.fbaFee}` : "", hasFbaFee && product.fbaFee <= rules.maxFbaFee, hasFbaFee && product.fbaFee <= rules.maxFbaFee ? "FBA费用不超过6，物流成本可控" : "FBA费用超过6，需谨慎核算利润"),
-        standardPoint(5, "上架时间", hasListingAgeDays ? `${product.listingAgeDays}天` : "", hasListingAgeDays && product.listingAgeDays <= rules.maxListingAgeDays, hasListingAgeDays && product.listingAgeDays <= rules.maxListingAgeDays ? "上架天数不超过720天，相对较新" : "上架时间偏老，追赶难度较高")
+        standardPoint(3, "ASIN价格", hasPrice ? `$${product.price}` : "", hasPrice && product.price >= rules.minPrice, hasPrice && product.price >= rules.minPrice ? `价格高于${rules.minPrice}，存在利润空间` : `价格低于${rules.minPrice}，利润空间偏弱`),
+        standardPoint(4, "ASIN物流成本", hasFbaFee ? `$${product.fbaFee}` : "", hasFbaFee && product.fbaFee <= rules.maxFbaFee, hasFbaFee && product.fbaFee <= rules.maxFbaFee ? `FBA费用不超过${rules.maxFbaFee}，物流成本可控` : `FBA费用超过${rules.maxFbaFee}，需谨慎核算利润`),
+        standardPoint(5, "上架时间", hasListingAgeDays ? `${product.listingAgeDays}天` : "", hasListingAgeDays && product.listingAgeDays <= rules.maxListingAgeDays, hasListingAgeDays && product.listingAgeDays <= rules.maxListingAgeDays ? `上架天数不超过${rules.maxListingAgeDays}天，相对较新` : `上架天数超过${rules.maxListingAgeDays}天，追赶难度较高`)
       ]
     },
     status: classify(product, scores, rejectionReasons, retentionReasons, rules),

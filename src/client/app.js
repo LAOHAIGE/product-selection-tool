@@ -1,5 +1,6 @@
 import { createWorkspaceStorage } from "./workspace-storage.js";
 import { fetchWithWorkspaceRecovery as recoverWorkspaceRequest } from "./workspace-recovery.js";
+import { displayRuleValue, parseRuleFormValues, selectionRulesChanged } from "./rule-form.js";
 
 const workspaceStorage = createWorkspaceStorage();
 
@@ -12,7 +13,10 @@ const state = {
   pendingCompetitorAsin: null,
   deepseek: null,
   aiConfig: null,
-  activeAnalysisTab: "detail"
+  defaultAiConfig: null,
+  ruleConfig: null,
+  activeAnalysisTab: "detail",
+  activeRuleConfigTab: "selection"
 };
 
 const SESSION_STORAGE_KEY = "product-selection-session-id";
@@ -93,14 +97,16 @@ function writeLocalAiConfig(config) {
   localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(config));
 }
 
-function mergeAiConfig(serverConfig = {}, localConfig = {}) {
+function mergeAiConfig(serverConfig = {}, localConfig = {}, ruleDefaults = {}) {
   const prompt = localConfig.prompt || serverConfig.prompt || "";
   const competitorPrompt = localConfig.competitorPrompt || serverConfig.competitorPrompt || "";
   const deepseekApiKey = localConfig.deepseekApiKey || "";
+  const selectionRules = { ...ruleDefaults, ...(localConfig.selectionRules || {}) };
   return {
     ...serverConfig,
     prompt,
     competitorPrompt,
+    selectionRules,
     isDefault: prompt === serverConfig.prompt ? Boolean(serverConfig.isDefault) : false,
     competitorPromptIsDefault: competitorPrompt === serverConfig.competitorPrompt ? Boolean(serverConfig.competitorPromptIsDefault) : false,
     deepseekKeyConfigured: Boolean(deepseekApiKey || serverConfig.deepseekKeyConfigured),
@@ -132,6 +138,11 @@ function deepseekRequestHeaders(kind = "") {
     headers["x-competitor-prompt-b64"] = base64Utf8(config.competitorPrompt);
   }
   return headers;
+}
+
+function selectionRulesRequestHeaders() {
+  const rules = state.aiConfig?.selectionRules || state.ruleConfig?.defaults || {};
+  return { ...sessionHeaders(), "x-selection-rules-b64": base64Utf8(JSON.stringify(rules)) };
 }
 
 const statusLabels = {
@@ -214,6 +225,23 @@ function setAnalysisTab(tab) {
   const allowed = new Set(["detail", "ai", "competitor"]);
   state.activeAnalysisTab = allowed.has(tab) ? tab : "detail";
   syncAnalysisTabs();
+}
+
+function syncRuleConfigTabs() {
+  document.querySelectorAll("[data-rule-config-tab]").forEach((button) => {
+    const active = button.dataset.ruleConfigTab === state.activeRuleConfigTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  document.querySelectorAll("[data-rule-config-panel]").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.ruleConfigPanel === state.activeRuleConfigTab);
+  });
+}
+
+function setRuleConfigTab(tab) {
+  const allowed = new Set(["selection", "asin-ai", "competitor-ai"]);
+  state.activeRuleConfigTab = allowed.has(tab) ? tab : "selection";
+  syncRuleConfigTabs();
 }
 
 function renderCandidates() {
@@ -464,7 +492,7 @@ function renderCompetitorAiPanel(item) {
 async function analyzeFile(file) {
   const response = await fetch("/api/analyze", {
     method: "POST",
-    headers: { ...sessionHeaders(), "content-type": file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+    headers: { ...selectionRulesRequestHeaders(), "content-type": file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
     body: await file.arrayBuffer()
   });
   if (!response.ok) {
@@ -591,10 +619,71 @@ function renderDeepSeekKeyStatus(message = "") {
   status.textContent = `DeepSeek Key：已配置${preview ? `（${preview}）` : ""}，来源：${source}。`;
 }
 
+function renderSelectionRuleFields(rules = state.aiConfig?.selectionRules || state.ruleConfig?.defaults || {}) {
+  const container = document.querySelector("#selectionRuleFields");
+  if (!container || !state.ruleConfig?.fields) return;
+  container.innerHTML = state.ruleConfig.fields.map((field) => {
+    const scale = field.displayScale || 1;
+    const value = displayRuleValue(field, rules[field.key] ?? state.ruleConfig.defaults[field.key]);
+    const min = field.min === undefined ? "" : `min="${field.min * scale}"`;
+    const max = field.max === undefined ? "" : `max="${field.max * scale}"`;
+    const step = (field.step || 1) * scale;
+    return `
+      <label class="selection-rule-field">
+        <span class="field-label">${field.label}</span>
+        <span class="selection-rule-input">
+          <input type="number" data-selection-rule="${field.key}" value="${value}" step="${step}" ${min} ${max}>
+          <span class="selection-rule-unit">${field.unit || ""}</span>
+        </span>
+      </label>
+    `;
+  }).join("");
+}
+
+function readSelectionRulesForm() {
+  const values = {};
+  for (const field of state.ruleConfig?.fields || []) {
+    const input = document.querySelector(`[data-selection-rule="${field.key}"]`);
+    input?.classList.remove("invalid");
+    values[field.key] = input?.value ?? "";
+  }
+  const { rules, errors } = parseRuleFormValues(state.ruleConfig?.fields || [], values);
+  errors.forEach((error) => document.querySelector(`[data-selection-rule="${error.key}"]`)?.classList.add("invalid"));
+  if (errors.length) {
+    const error = new Error(errors[0].message);
+    error.errors = errors;
+    throw error;
+  }
+  return rules;
+}
+
+function restoreDefaultRules() {
+  renderSelectionRuleFields(state.ruleConfig?.defaults || {});
+  const input = document.querySelector("#aiPromptInput");
+  const competitorInput = document.querySelector("#competitorPromptInput");
+  if (input) input.value = state.defaultAiConfig?.prompt || "";
+  if (competitorInput) competitorInput.value = state.defaultAiConfig?.competitorPrompt || "";
+  const status = document.querySelector("#aiConfigStatus");
+  if (status) status.textContent = "已填入默认规则，点击“保存规则”后生效。";
+}
+
+async function reanalyzeWithRules(rules) {
+  const response = await fetchWithWorkspaceRecovery("/api/reanalyze", {
+    method: "POST",
+    headers: { ...sessionHeaders(), "content-type": "application/json" },
+    body: JSON.stringify({ rules })
+  });
+  const json = await response.json().catch(() => ({ error: response.statusText }));
+  if (!response.ok) throw new Error(json.errors?.[0]?.message || json.error || response.statusText);
+  return json;
+}
+
 async function loadAiConfig() {
-  const response = await fetch("/api/ai-config");
-  if (!response.ok) return;
-  state.aiConfig = mergeAiConfig(await response.json(), readLocalAiConfig());
+  const [aiResponse, rulesResponse] = await Promise.all([fetch("/api/ai-config"), fetch("/api/rules")]);
+  if (!aiResponse.ok || !rulesResponse.ok) return;
+  state.defaultAiConfig = await aiResponse.json();
+  state.ruleConfig = await rulesResponse.json();
+  state.aiConfig = mergeAiConfig(state.defaultAiConfig, readLocalAiConfig(), state.ruleConfig.defaults);
   const input = document.querySelector("#aiPromptInput");
   const competitorInput = document.querySelector("#competitorPromptInput");
   const keyInput = document.querySelector("#deepseekKeyInput");
@@ -602,36 +691,41 @@ async function loadAiConfig() {
   if (input) input.value = state.aiConfig.prompt || "";
   if (competitorInput) competitorInput.value = state.aiConfig.competitorPrompt || "";
   if (keyInput) keyInput.value = "";
-  if (status) {
-    const asinRule = state.aiConfig.isDefault ? "ASIN 总结使用默认规则" : "ASIN 总结使用已保存规则";
-    const competitorRule = state.aiConfig.competitorPromptIsDefault ? "竞品分析使用默认规则" : "竞品分析使用已保存规则";
-    status.textContent = `${asinRule}；${competitorRule}。`;
-  }
+  renderSelectionRuleFields();
+  syncRuleConfigTabs();
+  if (status) status.textContent = "规则已读取，修改后点击“保存规则”。";
   renderDeepSeekKeyStatus();
   renderAiPanel(state.selected);
   renderCompetitorAiPanel(state.selected);
   renderCandidates();
 }
 
-async function saveAiConfig(options = {}) {
+async function saveRuleConfig(options = {}) {
   const input = document.querySelector("#aiPromptInput");
   const competitorInput = document.querySelector("#competitorPromptInput");
   const keyInput = document.querySelector("#deepseekKeyInput");
   const status = document.querySelector("#aiConfigStatus");
+  const selectionRules = readSelectionRulesForm();
   const prompt = input?.value || "";
   const competitorPrompt = competitorInput?.value || "";
   const deepseekApiKey = keyInput?.value.trim() || "";
   const existing = readLocalAiConfig();
+  const rulesChanged = selectionRulesChanged(state.run?.selectionRules, selectionRules, state.ruleConfig?.defaults);
   const savedLocalConfig = {
     ...existing,
     prompt,
     competitorPrompt,
+    selectionRules,
     deepseekApiKey: deepseekApiKey || existing.deepseekApiKey || "",
     updatedAt: new Date().toISOString()
   };
-  if (status && options.reportStatus !== false) status.textContent = "正在保存 AI 配置...";
+  if (status && options.reportStatus !== false) status.textContent = rulesChanged && state.run ? "正在保存并重新分析候选池..." : "正在保存规则...";
+  let reanalyzedRun = null;
+  if (state.run && rulesChanged && !options.skipReanalyze) {
+    reanalyzedRun = await reanalyzeWithRules(selectionRules);
+  }
   writeLocalAiConfig(savedLocalConfig);
-  state.aiConfig = mergeAiConfig(state.aiConfig || {}, savedLocalConfig);
+  state.aiConfig = mergeAiConfig(state.defaultAiConfig || {}, savedLocalConfig, state.ruleConfig?.defaults || {});
   if (state.aiConfig.deepseekKeyConfigured) {
     state.deepseek = {
       provider: "deepseek",
@@ -643,7 +737,12 @@ async function saveAiConfig(options = {}) {
   if (input) input.value = state.aiConfig.prompt || "";
   if (competitorInput) competitorInput.value = state.aiConfig.competitorPrompt || "";
   if (keyInput) keyInput.value = "";
-  if (status && options.reportStatus !== false) status.textContent = "AI 配置已保存，之后的 ASIN 总结和竞品分析会按新规则执行。";
+  if (reanalyzedRun) hydrateRun(reanalyzedRun, state.selected?.asin, { resetFilters: false });
+  if (status && options.reportStatus !== false) {
+    status.textContent = reanalyzedRun
+      ? "规则已保存，当前候选池已重新分析。"
+      : "规则已保存；AI Prompt 将在下一次分析时生效。";
+  }
   renderDeepSeekKeyStatus();
   renderNextSteps(state.run?.summary);
   renderAiPanel(state.selected);
@@ -657,7 +756,11 @@ async function testDeepSeekKey() {
   const pendingKey = keyInput?.value.trim() || "";
   renderDeepSeekKeyStatus("正在测试 DeepSeek Key...");
   if (pendingKey) {
-    await saveAiConfig({ reportStatus: false });
+    const existing = readLocalAiConfig();
+    const savedLocalConfig = { ...existing, deepseekApiKey: pendingKey, updatedAt: new Date().toISOString() };
+    writeLocalAiConfig(savedLocalConfig);
+    state.aiConfig = mergeAiConfig(state.defaultAiConfig || {}, savedLocalConfig, state.ruleConfig?.defaults || {});
+    if (keyInput) keyInput.value = "";
   }
   const response = await fetch("/api/deepseek-test", { method: "POST", headers: deepseekRequestHeaders() });
   const json = await response.json().catch(() => ({ error: response.statusText }));
@@ -787,10 +890,18 @@ document.querySelector("#statusFilter").addEventListener("change", (event) => {
   applyStatusFilter(event.target.value);
 });
 
-document.querySelector("#aiConfigSave").addEventListener("click", () => {
-  saveAiConfig().catch((error) => {
+document.querySelector("#rulesConfigSave").addEventListener("click", () => {
+  saveRuleConfig().catch((error) => {
     document.querySelector("#aiConfigStatus").textContent = `保存失败：${error.message}`;
   });
+});
+
+document.querySelector("#rulesRestoreDefault").addEventListener("click", restoreDefaultRules);
+
+document.querySelector(".rule-config-tabs").addEventListener("click", (event) => {
+  const tabButton = event.target.closest("[data-rule-config-tab]");
+  if (!tabButton) return;
+  setRuleConfigTab(tabButton.dataset.ruleConfigTab);
 });
 
 document.querySelector("#deepseekKeyTest").addEventListener("click", () => {
@@ -926,6 +1037,7 @@ renderSummary();
 renderNextSteps();
 syncFilterControls();
 syncAnalysisTabs();
+syncRuleConfigTabs();
 renderCandidates();
 renderAiPanel();
 renderCompetitorAiPanel();

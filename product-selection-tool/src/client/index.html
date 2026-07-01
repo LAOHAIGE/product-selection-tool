@@ -53,15 +53,27 @@
       </section>
       <section id="aiConfigPanel" class="ai-config-panel">
         <div class="ai-config-copy">
-          <div class="eyebrow">AI 配置</div>
-          <h2>DeepSeek 分析规则</h2>
-          <p class="muted">这里的规则会用于之后每一次 ASIN 总结和竞品分析。</p>
+          <div class="eyebrow">规则配置</div>
+          <h2>规则配置中心</h2>
+          <p class="muted">管理 ASIN 筛选阈值、AI 总结方式和竞品分析方式。</p>
         </div>
         <div class="ai-config-editor">
-          <label class="field-label" for="aiPromptInput">ASIN 总结规则</label>
-          <textarea id="aiPromptInput" rows="5" spellcheck="false"></textarea>
-          <label class="field-label" for="competitorPromptInput">竞品分析规则</label>
-          <textarea id="competitorPromptInput" rows="5" spellcheck="false"></textarea>
+          <div class="rule-config-tabs" role="tablist" aria-label="规则配置类型">
+            <button class="rule-config-tab active" type="button" data-rule-config-tab="selection">ASIN 详情规则</button>
+            <button class="rule-config-tab" type="button" data-rule-config-tab="asin-ai">AI 分析规则</button>
+            <button class="rule-config-tab" type="button" data-rule-config-tab="competitor-ai">竞品分析规则</button>
+          </div>
+          <div class="rule-config-panel active" data-rule-config-panel="selection">
+            <div id="selectionRuleFields" class="selection-rule-grid"></div>
+          </div>
+          <div class="rule-config-panel" data-rule-config-panel="asin-ai">
+            <label class="field-label" for="aiPromptInput">ASIN AI 总结 Prompt</label>
+            <textarea id="aiPromptInput" rows="7" spellcheck="false"></textarea>
+          </div>
+          <div class="rule-config-panel" data-rule-config-panel="competitor-ai">
+            <label class="field-label" for="competitorPromptInput">竞品 AI 分析 Prompt</label>
+            <textarea id="competitorPromptInput" rows="7" spellcheck="false"></textarea>
+          </div>
           <div class="deepseek-key-row">
             <label class="field-label" for="deepseekKeyInput">DeepSeek Key</label>
             <input id="deepseekKeyInput" class="text-input" type="password" autocomplete="off" placeholder="填入 sk- 开头的 DeepSeek Key">
@@ -69,10 +81,13 @@
           </div>
           <div class="ai-config-actions">
             <div>
-              <span id="aiConfigStatus" class="muted">正在读取 AI 配置。</span>
+              <span id="aiConfigStatus" class="muted">正在读取规则配置。</span>
               <span id="deepseekKeyStatus" class="muted key-status"></span>
             </div>
-            <button id="aiConfigSave" class="step-button primary" type="button">保存 AI 配置</button>
+            <div class="rule-config-actions">
+              <button id="rulesRestoreDefault" class="step-button" type="button">恢复默认</button>
+              <button id="rulesConfigSave" class="step-button primary" type="button">保存规则</button>
+            </div>
           </div>
         </div>
       </section>
